@@ -10,6 +10,7 @@ task tensorqtl_trans {
 
     Float maf_threshold
     Float? fdr
+    Boolean return_dense
 
     Int memory
     Int disk_space
@@ -24,7 +25,7 @@ task tensorqtl_trans {
             $plink_base ${phenotype_bed} ${prefix} \
             --mode trans \
             --covariates ${covariates} \
-            --return_dense \
+            ${if return_dense then "--return_dense" else ""} \
             ${"--fdr " + fdr} \
             ${"--maf_threshold " + maf_threshold} 
     }
