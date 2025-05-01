@@ -43,8 +43,10 @@ task tensorqtl_trans {
     }
 
     output {
-        File qtls = "${prefix}.trans_qtl_pval.parquet"
-
+        File trans_qtls_pval = "${prefix}.trans_qtl_pval.parquet"
+        File trans_qtl_beta = "${prefix}.trans_qtl_beta.parquet"
+        File trans_qtl_beta_se = "${prefix}.trans_qtl_beta_se.parquet"
+        File trans_qtl_af = "${prefix}.trans_qtl_af.parquet"
     }    
     meta {
         author: "Francois Aguet"
