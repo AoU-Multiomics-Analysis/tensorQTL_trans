@@ -43,10 +43,11 @@ task tensorqtl_trans {
     }
 
     output {
-        File trans_qtls_pval = "${prefix}.trans_qtl_pval.parquet"
-        File trans_qtl_beta = "${prefix}.trans_qtl_beta.parquet"
-        File trans_qtl_beta_se = "${prefix}.trans_qtl_beta_se.parquet"
-        File trans_qtl_af = "${prefix}.trans_qtl_af.parquet"
+        File? trans_qtl_pairs = if return_dense then null else "${prefix}.trans_qtl_pairs.parquet"
+        File? trans_qtls_pval = if return_dense then "${prefix}.trans_qtl_pval.parquet" else null
+        File? trans_qtl_beta = if return_dense then "${prefix}.trans_qtl_beta.parquet" else null
+        File? trans_qtl_beta_se = if return_dense then "${prefix}.trans_qtl_beta_se.parquet" else null
+        File? trans_qtl_af = if return_dense then "${prefix}.trans_qtl_af.parquet" else null
     }    
     meta {
         author: "Francois Aguet"
