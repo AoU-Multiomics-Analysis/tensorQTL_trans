@@ -37,7 +37,8 @@ task tensorqtl_trans {
         bootDiskSizeGb: 25
         cpu: "${num_threads}"
         preemptible: "${num_preempt}"
-        gpuType: "nvidia-tesla-p100"
+        predefinedMachineType: "g2-standard-16"
+        gpuType: "nvidia-l4"
         gpuCount: "${num_gpus}"
         zones: ["us-central1-c"]
     }
