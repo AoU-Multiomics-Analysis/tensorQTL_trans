@@ -1,0 +1,27 @@
+name: Validate WDL and interaction mapping
+on:
+  pull_request:
+    paths: ['tensorQTL_trans.wdl', 'tests/**', '.github/workflows/validate.yml']
+  push:
+    branches: [main]
+    paths: ['tensorQTL_trans.wdl', 'tests/**', '.github/workflows/validate.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install miniwdl==1.14.2
+      - run: miniwdl check tensorQTL_trans.wdl
+      - run: python -m unittest discover -s tests
+      - name: Install CPU smoke dependencies
+        run: |
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy==1.26.4 tensorqtl==1.0.10 pgenlib==0.93.0
+      - name: Run real tensorQTL smoke on CPU
+        run: python tests/smoke_tensorqtl.py
