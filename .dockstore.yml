@@ -1,4 +1,5 @@
 version: 1.2
 workflows:
-  - subclass: WDL 
-    primaryDescriptorPath: tensorQTL_trans.wdl
+  - name: tensorQTL_trans
+    subclass: WDL
+    primaryDescriptorPath: /tensorQTL_trans.wdl
