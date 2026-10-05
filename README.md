@@ -14,7 +14,7 @@ The workflow consists of a single task, `tensorqtl_trans`, which runs trans-QTL 
 
 **Task: `tensorqtl_trans`**
 
-Runs `python3 -m tensorqtl` in `--mode trans`, which tests all variant–phenotype pairs genome-wide and outputs significant associations.
+Runs `python3 -m tensorqtl` in `--mode trans`, which tests all variant–phenotype pairs genome-wide and outputs nominal association statistics.
 
 #### Inputs
 
@@ -23,28 +23,31 @@ Runs `python3 -m tensorqtl` in `--mode trans`, which tests all variant–phenoty
 | `plink_pgen` | File | PLINK2 `.pgen` genotype file |
 | `plink_pvar` | File | PLINK2 `.pvar` variant information file |
 | `plink_psam` | File | PLINK2 `.psam` sample information file |
-| `phenotype_bed` | File | Phenotype file in compressed BED format (`.bed.gz`) with corresponding index (`.bed.gz.tbi`) |
+| `phenotype_bed` | File | Phenotype file in compressed BED format (`.bed.gz`) (no index input required by this task) |
 | `covariates` | File | Covariates file (tab-separated, samples as columns) |
+| `interaction_file` | File? | Optional headerless TSV: sample ID and one numeric interaction value |
+| `pval_threshold` | Float | Sparse-output threshold for nominal p-values (default `0.00001`); not an FDR cutoff |
+| `batch_size` | Int | Variants per computation batch (default `1000`) |
 | `prefix` | String | Output filename prefix |
 | `maf_threshold` | Float | Minor allele frequency threshold for filtering variants |
-| `fdr` | Float? | (Optional) FDR threshold for reporting significant associations |
-| `return_dense` | Boolean | If `true`, returns all variant–phenotype pairs; if `false`, returns only significant pairs |
+| `fdr` | Float? | Legacy input; not applied in trans mode |
+| `return_dense` | Boolean | If `true`, returns dense association matrices (not supported with interactions); if `false`, returns pairs below `pval_threshold` |
 | `memory` | Int | Memory to allocate (GB) |
 | `disk_space` | Int | Disk space to allocate (GB) |
 | `num_threads` | Int | Number of CPU threads |
-| `num_gpus` | Int | Number of GPUs (NVIDIA Tesla P100) |
+| `num_gpus` | Int | Number of GPUs (NVIDIA L4) |
 | `num_preempt` | Int | Number of preemptible retries |
 
 #### Outputs
 
 | Output | Type | Description |
 |--------|------|-------------|
-| `trans_qtl` | File | Significant trans-QTL pairs in Parquet format (`<prefix>.trans_qtl_pairs.parquet`) |
+| `trans_qtl` | File | Sparse nominal trans-QTL pairs in Parquet format (`<prefix>.trans_qtl_pairs.parquet`) |
 
 #### Runtime
 
 - **Docker image**: `gcr.io/broad-cga-francois-gtex/tensorqtl:latest`
-- **GPU**: NVIDIA Tesla P100 (`nvidia-tesla-p100`)
+- **GPU**: NVIDIA L4 (`nvidia-l4`), `g2-standard-16`
 - **GCP zone**: `us-central1-c`
 
 ## Data Preparation
@@ -68,7 +71,7 @@ Recommended preprocessing steps:
 
 ### Phenotype Data (BED format)
 
-Phenotypes must be provided as a [bgzipped](http://www.htslib.org/doc/bgzip.html) and [tabix](http://www.htslib.org/doc/tabix.html)-indexed BED file (`.bed.gz` + `.bed.gz.tbi`). The format expected by tensorQTL is:
+Phenotypes must be provided as a [gzipped](http://www.htslib.org/doc/bgzip.html) BED file (`.bed.gz`). The format expected by tensorQTL is:
 
 - **Tab-separated**
 - First four columns: `#chr`, `start`, `end`, `phenotype_id`
@@ -114,7 +117,7 @@ Before running the workflow, ensure that sample IDs are consistent across all th
 
 ## Running on Terra
 
-1. Import the workflow from [Dockstore](https://dockstore.org/) using the `.dockstore.yml` configuration.
+1. Import `tensorQTL_trans.wdl` into Terra through a workflow repository or Dockstore.
 2. Upload your input files to a Google Cloud Storage bucket.
 3. Fill in the workflow inputs JSON with the GCS paths to your files and desired parameter values.
 4. Launch the workflow on Terra.
@@ -125,3 +128,65 @@ Before running the workflow, ensure that sample IDs are consistent across all th
 - [Taylor-Weiner et al., *Genome Biology* 2019](https://doi.org/10.1186/s13059-019-1851-8)
 - [WDL specification](https://openwdl.org/)
 - [PLINK2 documentation](https://www.cog-genomics.org/plink/2.0/)
+
+## Optional interaction mapping
+
+Set `tensorqtl_trans_workflow.tensorqtl_trans.interaction_file` to the GCS URI
+of a two-column, headerless TSV. Leave it unset for ordinary trans mapping.
+WDL preserves this input as `File?`, so Terra localizes it before validation.
+The task checks that all required paths are readable. It also places the
+three PLINK files under a common local prefix, even when Cromwell localizes
+those files in separate directories.
+
+Example CD4 interaction file (tab-separated):
+
+```text
+SAMPLE1	0.18
+SAMPLE2	0.24
+SAMPLE3	0.12
+```
+
+The file must contain exactly one finite numeric value per phenotype sample.
+Sample IDs must be unique and match the phenotype BED exactly. The task
+aligns the rows to the phenotype sample order. Values must vary. Use a
+consistent fraction scale (for example, 0–1 for CD4 fractions).
+
+The model includes genotype, the interaction variable's main effect, and
+genotype × interaction variable, plus the covariates. For a CD4 scan:
+
+- Put CD4 fractions in `interaction_file`.
+- Put genetic PCs, expression PCs, technical covariates, and seven other
+  fractions in `covariates`.
+- Do not put CD4 fractions in `covariates`; the interaction option already
+  includes their main effect. The task rejects a duplicate main effect,
+  including a centered or rescaled copy.
+- Omit one additional fraction because all nine fractions sum to one.
+- Set `return_dense=false`. tensorQTL trans mode supports one interaction
+  variable and sparse output only.
+
+This tests whether a genetic effect varies with CD4 abundance. It does not
+fit the joint nine-cell Decon-eQTL model or prove that an effect is exclusive
+to CD4 cells.
+
+The sparse output includes `pval_g`, `pval_i`, and `pval_gi`; use `pval_gi`
+for the genotype × interaction test. The output threshold is a storage
+filter, not multiple-testing correction. Apply a correction that accounts
+for all tested trans pairs. With BED phenotype input, tensorQTL removes
+pairs within ±5 Mb; dense ordinary output is not filtered this way.
+
+`trans_qtl` is now optional: it is populated for sparse runs. For ordinary
+dense runs, the workflow returns `trans_qtls_pval`, `trans_qtl_beta`,
+`trans_qtl_beta_se`, and `trans_qtl_af` instead.
+
+## Validation
+
+GitHub Actions runs WDL validation, task command tests, a static check for
+workflow-scope file-writing functions, and a real CPU tensorQTL 1.0.10 smoke
+test. No Docker image is built. The command tests cover absent/present
+interaction inputs, sample alignment, invalid values, safe path quoting,
+unresolved cloud URIs, and separate PLINK localization directories.
+
+The complete workflow has **not been tested on Terra**. The command tests
+simulate cloud-to-local paths; they do not exercise Terra's localization
+service. The CPU smoke uses a pinned tensorQTL package and does not confirm
+the package version in the existing `:latest` GPU image.
