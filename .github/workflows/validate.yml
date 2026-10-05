@@ -22,6 +22,6 @@ jobs:
       - name: Install CPU smoke dependencies
         run: |
           pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
-          pip install numpy==1.26.4 tensorqtl==1.0.10 pgenlib==0.93.0
+          pip install numpy==1.26.4 tensorqtl==1.0.10 pgenlib==0.93.0 pandas-plink==2.3.2
       - name: Run real tensorQTL smoke on CPU
         run: python tests/smoke_tensorqtl.py
