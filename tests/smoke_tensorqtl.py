@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
     with pgenlib.PgenWriter(os.fsencode(root/'input.pgen'), sample_ct=n, variant_ct=3) as writer:
         for row in genotypes:
-            writer.append(row)
+            writer.append_biallelic(row)
     (root/'input.pvar').write_text('#CHROM\tPOS\tID\tREF\tALT\n' + ''.join(
         f'1\t{i+1}\tv{i}\tA\tG\n' for i in range(3)))
     (root/'input.psam').write_text('#IID\n' + '\n'.join(samples) + '\n')
