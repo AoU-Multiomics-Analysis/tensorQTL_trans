@@ -45,8 +45,10 @@ task tensorqtl_trans {
                 log "Input error: tensorQTL trans interactions require sparse output (return_dense=false)."
                 exit 1
             fi
+            log "Clean samples: intersect interaction, covariates, and phenotype BED."
             python3 - "$interaction_file" "$phenotype_bed" "$covariates" <<'PY'
         import csv
+        from datetime import datetime, timezone
         import gzip
         import math
         import sys
@@ -57,10 +59,10 @@ task tensorqtl_trans {
         interaction_path, phenotype_path, covariate_path = sys.argv[1:]
         opener = gzip.open if phenotype_path.endswith('.gz') else open
         with opener(phenotype_path, 'rt') as handle:
-            header = next(csv.reader(handle, delimiter='\t'))
-        samples = header[4:]
-        if not samples or len(set(samples)) != len(samples):
-            fail('phenotype BED must have unique sample IDs after its four metadata columns.')
+            header = next(csv.reader(handle, delimiter='\t'), [])
+        bed_samples = header[4:]
+        if not bed_samples or not all(bed_samples) or len(set(bed_samples)) != len(bed_samples):
+            fail('phenotype BED must have nonempty, unique sample IDs after its four metadata columns.')
         values = {}
         with open(interaction_path) as handle:
             for row in csv.reader(handle, delimiter='\t'):
@@ -76,36 +78,67 @@ task tensorqtl_trans {
                 if not math.isfinite(value):
                     fail('interaction values must be finite.')
                 values[sample] = value
-        if set(values) != set(samples):
-            fail('interaction sample IDs must match the phenotype BED exactly.')
+        with open(covariate_path) as handle:
+            cov_header = next(csv.reader(handle, delimiter='\t'), [])
+        cov_samples = cov_header[1:]
+        if not cov_samples or not all(cov_samples) or len(set(cov_samples)) != len(cov_samples):
+            fail('covariate header must have nonempty, unique sample IDs after its ID column.')
+        shared = set(values).intersection(cov_samples)
+        samples = [sample for sample in bed_samples if sample in shared]
+        if not samples:
+            fail('no shared samples between interaction, covariates, and phenotype BED.')
         ordered = [values[sample] for sample in samples]
         if len(set(ordered)) < 2:
-            fail('interaction values must vary across samples.')
-        with open(covariate_path) as handle:
+            fail('interaction values must vary across retained samples.')
+        bed_index = {sample: index + 4 for index, sample in enumerate(bed_samples)}
+        cov_index = {sample: index + 1 for index, sample in enumerate(cov_samples)}
+        bed_columns = list(range(4)) + [bed_index[sample] for sample in samples]
+        cov_columns = [0] + [cov_index[sample] for sample in samples]
+        with opener(phenotype_path, 'rt') as handle, gzip.open('phenotype.aligned.bed.gz', 'wt') as output:
             reader = csv.reader(handle, delimiter='\t')
-            cov_header = next(reader)
-            if cov_header[1:] != samples:
-                fail('covariate sample IDs and order must match the phenotype BED.')
+            writer = csv.writer(output, delimiter='\t', lineterminator='\n')
+            writer.writerow([header[index] for index in bed_columns])
+            next(reader)
             for row in reader:
-                if len(row) != len(samples) + 1:
+                if len(row) != len(header):
+                    fail('phenotype BED rows must match the header width.')
+                writer.writerow([row[index] for index in bed_columns])
+        interaction_mean = sum(ordered)/len(ordered)
+        center = [value - interaction_mean for value in ordered]
+        with open(covariate_path) as handle, open('covariates.aligned.tsv', 'w') as output:
+            reader = csv.reader(handle, delimiter='\t')
+            writer = csv.writer(output, delimiter='\t', lineterminator='\n')
+            writer.writerow([cov_header[index] for index in cov_columns])
+            next(reader)
+            for row in reader:
+                if len(row) != len(cov_header):
                     fail('covariate rows must match the header width.')
+                aligned = [row[index] for index in cov_columns]
                 try:
-                    cov = [float(value) for value in row[1:]]
+                    cov = [float(value) for value in aligned[1:]]
                 except ValueError:
                     fail('covariates must be numeric.')
                 if not all(math.isfinite(value) for value in cov):
                     fail('covariates must be finite.')
                 # Detect the same main effect even if centered or expressed in percent.
-                center = [value - sum(ordered)/len(ordered) for value in ordered]
-                ccenter = [value - sum(cov)/len(cov) for value in cov]
+                cov_mean = sum(cov)/len(cov)
+                ccenter = [value - cov_mean for value in cov]
                 scale = sum(a*b for a,b in zip(center, ccenter)) / sum(a*a for a in center)
                 residual = sum((b-scale*a)**2 for a,b in zip(center, ccenter))
                 if scale != 0 and residual <= 1e-12 * sum(b*b for b in ccenter):
                     fail('interaction main effect is already in the covariates: ' + row[0])
+                writer.writerow(aligned)
         with open('interaction.aligned.tsv', 'w') as handle:
             for sample in samples:
                 handle.write(sample + '\t' + str(values[sample]) + '\n')
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        print(f'[{timestamp}] stage=tensorqtl_trans Sample intersection: retained={len(samples)}; '
+              f'BED dropped={len(bed_samples)-len(samples)}; '
+              f'covariates dropped={len(cov_samples)-len(samples)}; '
+              f'interaction dropped={len(values)-len(samples)}.', file=sys.stderr)
         PY
+            phenotype_bed=phenotype.aligned.bed.gz
+            covariates=covariates.aligned.tsv
         fi
         # Cromwell may localize PLINK components into separate directories.
         mkdir -p localized_genotypes

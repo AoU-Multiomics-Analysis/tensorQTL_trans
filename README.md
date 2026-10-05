@@ -146,10 +146,24 @@ SAMPLE2	0.24
 SAMPLE3	0.12
 ```
 
-The file must contain exactly one finite numeric value per phenotype sample.
-Sample IDs must be unique and match the phenotype BED exactly. The task
-aligns the rows to the phenotype sample order. Values must vary. Use a
-consistent fraction scale (for example, 0–1 for CD4 fractions).
+The file must contain one finite numeric value per listed sample. Sample IDs
+must be nonempty and unique. Use a consistent fraction scale (for example,
+0–1 for CD4 fractions).
+
+When an interaction file is present, the task keeps only samples present in
+all three files: the interaction TSV, the covariates TSV, and the phenotype
+BED. It creates local copies with the same sample order as the original BED.
+It removes samples outside this intersection from each copy. The four BED
+metadata columns, phenotype rows, and covariate names remain in the copies.
+The task streams the BED rows into a compressed BED file. It does not load
+the complete phenotype matrix into memory for this step.
+
+The task reports the number of retained samples and the number removed from
+each file. It stops if there are no shared samples, or if the retained
+interaction values do not vary. It checks for a duplicate interaction main
+effect in the retained covariates. Retained samples must also be present in
+the genotype files. Without an interaction file, the task uses the original
+BED and covariates files.
 
 The model includes genotype, the interaction variable's main effect, and
 genotype × interaction variable, plus the covariates. For a CD4 scan:
@@ -183,8 +197,12 @@ dense runs, the workflow returns `trans_qtls_pval`, `trans_qtl_beta`,
 GitHub Actions runs WDL validation, task command tests, a static check for
 workflow-scope file-writing functions, and a real CPU tensorQTL 1.0.10 smoke
 test. No Docker image is built. The command tests cover absent/present
-interaction inputs, sample alignment, invalid values, safe path quoting,
+interaction inputs, three-file sample intersection, plain and compressed
+BED input, sample order, invalid values, safe path quoting,
 unresolved cloud URIs, and separate PLINK localization directories.
+The CPU smoke test compares an interaction run with partial sample overlap
+against a manually filtered reference. It also checks ordinary sparse and
+dense runs.
 
 The complete workflow has **not been tested on Terra**. The command tests
 simulate cloud-to-local paths; they do not exercise Terra's localization
