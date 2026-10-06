@@ -250,7 +250,7 @@ dense runs, the workflow returns `trans_qtls_pval`, `trans_qtl_beta`,
 
 ## Validation
 
-GitHub Actions runs WDL validation, task command tests, a static check for
+GitHub Actions runs miniwdl and Cromwell womtool 92 validation, task command tests, a static check for
 workflow-scope file-writing functions, and a real CPU tensorQTL 1.0.10 smoke
 test. No Docker image is built. The command tests cover absent/present
 interaction inputs, three-file sample intersection, plain and compressed

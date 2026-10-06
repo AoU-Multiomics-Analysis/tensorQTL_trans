@@ -279,5 +279,15 @@ class WorkflowTests(unittest.TestCase):
                 visit(child)
         visit(doc.workflow)
 
+    def test_wdl10_does_not_call_sep_engine_function(self):
+        # miniwdl accepts this WDL 1.1 function in a 1.0 file; Terra rejects it.
+        doc = WDL.load(str(ROOT/'tensorQTL_trans.wdl'))
+        def visit(node):
+            if isinstance(node, WDL.Expr.Apply):
+                self.assertNotEqual(node.function_name, 'sep')
+            for child in node.children:
+                visit(child)
+        visit(doc)
+
 if __name__ == '__main__':
     unittest.main()

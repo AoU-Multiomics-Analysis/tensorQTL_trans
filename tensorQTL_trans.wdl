@@ -372,12 +372,12 @@ task merge_trans {
         set -euo pipefail
         log() { echo "[$(date -u +%FT%TZ)] stage=merge_trans $*" >&2; }
         log "Merge chromosome results."
-        # Convert typed File arrays to local paths only during command rendering.
-        printf '%s' '~{sub(sep("\n", pairs), "'", "'\"'\"'")}' > pairs.list
-        printf '%s' '~{sub(sep("\n", pvals), "'", "'\"'\"'")}' > pvals.list
-        printf '%s' '~{sub(sep("\n", betas), "'", "'\"'\"'")}' > betas.list
-        printf '%s' '~{sub(sep("\n", beta_ses), "'", "'\"'\"'")}' > beta_ses.list
-        printf '%s' '~{sub(sep("\n", afs), "'", "'\"'\"'")}' > afs.list
+        # WDL 1.0: create file lists during command rendering, after localization.
+        cp '~{write_lines(pairs)}' pairs.list
+        cp '~{write_lines(pvals)}' pvals.list
+        cp '~{write_lines(betas)}' betas.list
+        cp '~{write_lines(beta_ses)}' beta_ses.list
+        cp '~{write_lines(afs)}' afs.list
         python3 -u - '~{sub(prefix, "'", "'\"'\"'")}' ~{chromosome_count} ~{return_dense} <<'PY'
         from datetime import datetime, timezone
         from pathlib import Path
