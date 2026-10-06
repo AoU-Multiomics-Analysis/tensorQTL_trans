@@ -15,7 +15,7 @@ task tensorqtl_trans {
         Boolean return_dense
         Float pval_threshold = 0.00001
         Int batch_size = 1000
-        Int memory = 120
+        Int memory = 256
         Int disk_space
         Int num_threads = 32
         Int num_gpus = 1
@@ -49,7 +49,7 @@ task tensorqtl_trans {
         if ~{return_dense}; then args+=(--return_dense); fi
         if [[ -n "$interaction_file" ]]; then args+=(--interaction "$interaction_file"); fi
         if ~{defined(fdr)}; then log "Note: fdr is not applied in trans mode; saved p-values are nominal."; fi
-        log "Resources: machine=g2-standard-32; memory=~{memory}GB; CPUs=~{num_threads}; GPUs=~{num_gpus}."
+        log "Resources: machine=custom-48-278528; memory=~{memory}GB; CPUs=~{num_threads}; GPUs=~{num_gpus}."
         if [[ -r /proc/meminfo ]]; then awk '/^MemTotal:/ {print "Host " $0 > "/dev/stderr"}' /proc/meminfo; fi
         for limit in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory/memory.limit_in_bytes; do
             if [[ -r "$limit" ]]; then log "Container memory limit (bytes): $(cat "$limit")"; break; fi
@@ -124,8 +124,8 @@ task tensorqtl_trans {
         bootDiskSizeGb: 25
         cpu: num_threads
         preemptible: num_preempt
-        predefinedMachineType: "g2-standard-32"
-        gpuType: "nvidia-l4"
+        predefinedMachineType: "custom-48-278528"
+        gpuType: "nvidia-tesla-t4"
         gpuCount: num_gpus
         zones: ["us-central1-c"]
     }
@@ -464,7 +464,7 @@ workflow tensorqtl_trans_workflow {
         Boolean return_dense
         Float pval_threshold = 0.00001
         Int batch_size = 1000
-        Int memory = 120
+        Int memory = 256
         Int disk_space
         Int num_threads = 32
         Int num_gpus = 1

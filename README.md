@@ -49,13 +49,13 @@ Runs `python3 -m tensorqtl` in `--mode trans`, which tests all variant–phenoty
 | `maf_threshold` | Float | Minor allele frequency threshold for filtering variants |
 | `fdr` | Float? | Legacy input; not applied in trans mode |
 | `return_dense` | Boolean | If `true`, returns dense association matrices (not supported with interactions); if `false`, returns pairs below `pval_threshold` |
-| `memory` | Int | Memory in GB for each chromosome mapping task (default `120`) |
+| `memory` | Int | Memory in GB for each `tensorqtl_trans` task (default `256`) |
 | `split_memory` | Int | Memory in GB for the PLINK2 split task (default `8`, minimum `2`) |
 | `split_threads` | Int | CPU threads for the split task (default `4`) |
 | `auxiliary_memory` | Int | Memory in GB for each preparation and merge task (default `16`) |
 | `disk_space` | Int | Disk space in GB for each task; the split task needs room for the full input and all chromosome files |
 | `num_threads` | Int | Number of CPU threads (default `32`) |
-| `num_gpus` | Int | Number of NVIDIA L4 GPUs (default `1`; use `1` on this machine) |
+| `num_gpus` | Int | Number of NVIDIA T4 GPUs (default `1`; use `1` on this machine) |
 | `num_preempt` | Int | Number of preemptible retries |
 
 #### Outputs
@@ -70,12 +70,12 @@ Runs `python3 -m tensorqtl` in `--mode trans`, which tests all variant–phenoty
 
 - **Mapping, preparation, and merge image**: `gcr.io/broad-cga-francois-gtex/tensorqtl:latest`
 - **Split image**: `quay.io/biocontainers/plink2:2.00a5.12--h4ac6f70_0`
-- **Mapping machine**: `g2-standard-32`, with 32 vCPUs and 128 GB system RAM
-- **GPU**: one NVIDIA L4 (`nvidia-l4`)
-- **Task memory**: 120 GB by default, with RAM left for the operating system
+- **tensorQTL machine**: N1 custom `custom-48-278528`, with 48 vCPUs and 272 GB system RAM
+- **GPU**: one NVIDIA T4 (`nvidia-tesla-t4`), with 16 GB GPU memory
+- **tensorQTL task memory**: 256 GB by default, with 16 GB left for the operating system
 - **GCP zone**: `us-central1-c`
 
-When you update an existing Terra configuration, set `memory=120`,
+When you update an existing Terra configuration, set `memory=256`,
 `num_threads=32`, and `num_gpus=1`, or remove those values to use the new
 defaults. Explicit input values override the defaults. Each chromosome mapping
 task uses one GPU. Terra controls how many scatter tasks run at the same
@@ -84,7 +84,17 @@ phenotype matrix and its retained results, so a large chromosome or
 phenotype matrix can still exceed memory. Engine messages are sent to
 stderr without Python output buffering. The task also reports requested
 resources and readable host/container memory limits. The larger machine
-increases system RAM. GPU memory remains 24 GB.
+increases system RAM. This configuration changes the GPU from an L4
+(24 GB GPU memory) to a T4 (16 GB). If a run reports a CUDA out-of-memory
+error, reduce `batch_size`; a larger system memory request does not increase
+GPU memory.
+
+The one-L4 G2 configuration cannot provide 256 GB of system RAM.
+[Google's GPU specifications](https://docs.cloud.google.com/compute/docs/gpus)
+support one T4 with up to 48 vCPUs and 312 GB of system RAM on N1.
+This update applies only to `tensorqtl_trans` resources and its default
+memory input. Sample preparation, chromosome splitting, and result merging
+retain their existing resource settings.
 
 ## Data Preparation
 
