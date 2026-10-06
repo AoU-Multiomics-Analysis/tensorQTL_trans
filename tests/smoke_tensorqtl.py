@@ -32,6 +32,12 @@ with tempfile.TemporaryDirectory() as tmp:
     phenotype.to_csv(root/'expression.bed', sep='\t', index=False)
     covariates.to_csv(root/'covariates.tsv', sep='\t')
     interactions.to_csv(root/'interaction.tsv', sep='\t', header=False)
+    # Keep ordinary modes on their direct CLI path, using IDs without leading zeros.
+    ordinary_samples = [str(int(sample)) for sample in samples]
+    rename_samples = dict(zip(samples, ordinary_samples))
+    phenotype.rename(columns=rename_samples).to_csv(root/'ordinary.bed', sep='\t', index=False)
+    covariates.rename(columns=rename_samples).to_csv(root/'ordinary.covariates.tsv', sep='\t')
+    (root/'ordinary.psam').write_text('#IID\n'+'\n'.join(ordinary_samples)+'\n')
     # The three sample sets differ, and both TSV files use a different order.
     phenotype.to_csv(root/'partial.bed.gz', sep='\t', index=False)
     partial_covariates = covariates.loc[:, samples[10:][::-1]].copy()
@@ -62,6 +68,10 @@ with tempfile.TemporaryDirectory() as tmp:
             inputs.update(phenotype_bed=str(root/(stem+'.bed.gz' if mode == 'intersection' else stem+'.bed')),
                           covariates=str(root/(stem+'.covariates.tsv')),
                           interaction_file=str(root/(stem+'.interaction.tsv')))
+        else:
+            inputs.update(plink_psam=str(root/'ordinary.psam'),
+                          phenotype_bed=str(root/'ordinary.bed'),
+                          covariates=str(root/'ordinary.covariates.tsv'))
         env = WDL.values_from_json(inputs, task.available_inputs)
         stdlib = WDL.StdLib.Base(task.effective_wdl_version)
         for decl in task.inputs:

@@ -166,10 +166,11 @@ the genotype files. Without an interaction file, the task uses the original
 BED and covariates files.
 
 For interaction runs, the task uses a small Python launcher for the tensorQTL
-CLI. The launcher reads sample IDs in the aligned interaction TSV as text.
+CLI. The launcher reads sample IDs in the aligned interaction TSV and the
+genotype PSAM file as text.
 This prevents numeric IDs from becoming numbers and preserves leading zeros.
 It also preserves IDs such as `NA` as text. The reader change applies only to
-the aligned interaction file in that process. It does not change the installed
+those two files in that process. It does not change the installed
 tensorQTL package or the sample IDs in any file.
 
 The model includes genotype, the interaction variable's main effect, and
