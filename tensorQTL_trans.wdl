@@ -15,10 +15,10 @@ task tensorqtl_trans {
         Boolean return_dense
         Float pval_threshold = 0.00001
         Int batch_size = 1000
-        Int memory
+        Int memory = 120
         Int disk_space
-        Int num_threads
-        Int num_gpus
+        Int num_threads = 32
+        Int num_gpus = 1
         Int num_preempt
     }
 
@@ -195,7 +195,7 @@ task tensorqtl_trans {
         bootDiskSizeGb: 25
         cpu: num_threads
         preemptible: num_preempt
-        predefinedMachineType: "g2-standard-16"
+        predefinedMachineType: "g2-standard-32"
         gpuType: "nvidia-l4"
         gpuCount: num_gpus
         zones: ["us-central1-c"]
