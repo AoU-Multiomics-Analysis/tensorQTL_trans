@@ -4,6 +4,7 @@ import gzip
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 import WDL
@@ -74,11 +75,16 @@ class WorkflowTests(unittest.TestCase):
                 ' opener=gzip.open if p.endswith(".gz") else open\n'
                 ' with opener(p,"rt") as f: data[key]=list(csv.reader(f,delimiter="\\t"))\n'
                 'if "--interaction" in sys.argv:\n'
+                ' import pandas as pd\n'
+                ' cov=pd.read_csv(sys.argv[sys.argv.index("--covariates")+1],sep="\\t",index_col=0).T\n'
+                ' inter=pd.read_csv(sys.argv[sys.argv.index("--interaction")+1],sep="\\t",index_col=0,header=None)\n'
+                ' assert cov.index.isin(inter.index).all(), "tensorQTL interaction sample-ID assertion"\n'
                 ' with open(sys.argv[sys.argv.index("--interaction")+1]) as f:\n'
                 '  data["interaction"]=list(csv.reader(f,delimiter="\\t"))\n'
                 'pathlib.Path("mapping_inputs.json").write_text(json.dumps(data))\n')
             result = subprocess.run(['bash', '-c', command], cwd=root, text=True,
-                                    capture_output=True, env={**os.environ, 'PYTHONPATH':str(root)})
+                                    capture_output=True, env={**os.environ, 'PYTHONPATH':str(root),
+                                        'PATH':str(Path(sys.executable).parent)+os.pathsep+os.environ['PATH']})
             args = json.loads((root/'argv.json').read_text()) if (root/'argv.json').exists() else None
             result.mapping_inputs = (json.loads((root/'mapping_inputs.json').read_text())
                                      if (root/'mapping_inputs.json').exists() else None)
@@ -107,6 +113,17 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('--interaction', args)
         self.assertEqual(result.mapping_inputs['interaction'],
                          [['S1', '0.1'], ['S2', '0.3'], ['S3', '0.2']])
+
+    def test_interaction_reader_preserves_text_sample_ids(self):
+        for samples in [('123456', '234567', '345678'), ('001', '002', '003'), ('NA', 'null', 'S3')]:
+            with self.subTest(samples=samples):
+                result, args = self.run_task(
+                    ''.join(f'{sample}\t{value}\n' for sample, value in zip(samples, [0.1, 0.3, 0.2])),
+                    phenotype_data=('#chr\tstart\tend\tphenotype_id\t'+'\t'.join(samples)+
+                                    '\n9\t0\t1\tGENE\t1\t2\t3\n'),
+                    covariates_data='ID\t'+'\t'.join(samples)+'\nPC1\t0\t1\t2\n')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual([row[0] for row in result.mapping_inputs['interaction']], list(samples))
 
     def test_three_way_intersection_keeps_bed_order_and_values(self):
         phenotype = ('#chr\tstart\tend\tphenotype_id\tS3\tS1\tS2\tS4\tS7\n'

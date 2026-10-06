@@ -11,7 +11,8 @@ import WDL
 REPO = Path(__file__).resolve().parents[1]
 rng = np.random.default_rng(2026)
 n = 120
-samples = [f'S{i}' for i in range(n)]
+# Numeric IDs with leading zeros reproduce tensorQTL's interaction-index inference bug.
+samples = [f'{1000+i:08d}' for i in range(n)]
 genotypes = rng.binomial(2, 0.35, size=(3, n)).astype(np.int8)
 interaction = rng.uniform(0.05, 0.5, n)
 expression = 2 + 8*genotypes[0]*interaction + rng.normal(0, 0.1, n)
