@@ -165,6 +165,14 @@ effect in the retained covariates. Retained samples must also be present in
 the genotype files. Without an interaction file, the task uses the original
 BED and covariates files.
 
+For interaction runs, the task uses a small Python launcher for the tensorQTL
+CLI. The launcher reads sample IDs in the aligned interaction TSV and the
+genotype PSAM file as text.
+This prevents numeric IDs from becoming numbers and preserves leading zeros.
+It also preserves IDs such as `NA` as text. The reader change applies only to
+those two files in that process. It does not change the installed
+tensorQTL package or the sample IDs in any file.
+
 The model includes genotype, the interaction variable's main effect, and
 genotype × interaction variable, plus the covariates. For a CD4 scan:
 
@@ -202,7 +210,7 @@ BED input, sample order, invalid values, safe path quoting,
 unresolved cloud URIs, and separate PLINK localization directories.
 The CPU smoke test compares an interaction run with partial sample overlap
 against a manually filtered reference. It also checks ordinary sparse and
-dense runs.
+dense runs. The smoke inputs use numeric sample IDs with leading zeros.
 
 The complete workflow has **not been tested on Terra**. The command tests
 simulate cloud-to-local paths; they do not exercise Terra's localization

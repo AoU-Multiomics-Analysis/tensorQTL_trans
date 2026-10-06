@@ -152,7 +152,39 @@ task tensorqtl_trans {
         if [[ -n "$interaction_file" ]]; then args+=(--interaction interaction.aligned.tsv); fi
         if ~{defined(fdr)}; then log "Note: fdr is not applied in trans mode; saved p-values are nominal."; fi
         log "Start mapping; interaction enabled: ~{defined(interaction_file)}."
-        python3 -m tensorqtl "${args[@]}"
+        if [[ -n "$interaction_file" ]]; then
+            log "Read interaction and genotype sample IDs as text; preserve leading zeros."
+            python3 - "${args[@]}" <<'PY'
+        import os
+        import runpy
+        import sys
+        import pandas as pd
+
+        interaction_path = sys.argv[sys.argv.index('--interaction') + 1]
+        psam_path = sys.argv[1] + '.psam'
+        original_read_csv = pd.read_csv
+
+        def read_csv_with_sample_ids(path, *args, **kwargs):
+            # tensorQTL's CLI infers interaction index types, unlike sample column names.
+            # Change only the interaction and PSAM readers in this process; keep IDs intact.
+            if isinstance(path, (str, os.PathLike)) and os.fspath(path) == interaction_path:
+                kwargs['dtype'] = {0: str}
+                kwargs['keep_default_na'] = False
+            elif isinstance(path, (str, os.PathLike)) and os.fspath(path) == psam_path:
+                dtype = kwargs.get('dtype')
+                if dtype is None or isinstance(dtype, dict):
+                    kwargs['dtype'] = {**(dtype or {}), 0: str, '#IID': str, 'IID': str,
+                                       '#FID': str, 'FID': str}
+                kwargs['keep_default_na'] = False
+            return original_read_csv(path, *args, **kwargs)
+
+        pd.read_csv = read_csv_with_sample_ids
+        sys.argv[0] = 'tensorqtl'
+        runpy.run_module('tensorqtl', run_name='__main__')
+        PY
+        else
+            python3 -m tensorqtl "${args[@]}"
+        fi
         log "Mapping completed."
     >>>
 

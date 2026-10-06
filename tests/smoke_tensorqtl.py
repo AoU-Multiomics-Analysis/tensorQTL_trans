@@ -11,7 +11,8 @@ import WDL
 REPO = Path(__file__).resolve().parents[1]
 rng = np.random.default_rng(2026)
 n = 120
-samples = [f'S{i}' for i in range(n)]
+# Numeric IDs with leading zeros reproduce tensorQTL's interaction-index inference bug.
+samples = [f'{1000+i:08d}' for i in range(n)]
 genotypes = rng.binomial(2, 0.35, size=(3, n)).astype(np.int8)
 interaction = rng.uniform(0.05, 0.5, n)
 expression = 2 + 8*genotypes[0]*interaction + rng.normal(0, 0.1, n)
@@ -31,6 +32,12 @@ with tempfile.TemporaryDirectory() as tmp:
     phenotype.to_csv(root/'expression.bed', sep='\t', index=False)
     covariates.to_csv(root/'covariates.tsv', sep='\t')
     interactions.to_csv(root/'interaction.tsv', sep='\t', header=False)
+    # Keep ordinary modes on their direct CLI path, using IDs without leading zeros.
+    ordinary_samples = [str(int(sample)) for sample in samples]
+    rename_samples = dict(zip(samples, ordinary_samples))
+    phenotype.rename(columns=rename_samples).to_csv(root/'ordinary.bed', sep='\t', index=False)
+    covariates.rename(columns=rename_samples).to_csv(root/'ordinary.covariates.tsv', sep='\t')
+    (root/'ordinary.psam').write_text('#IID\n'+'\n'.join(ordinary_samples)+'\n')
     # The three sample sets differ, and both TSV files use a different order.
     phenotype.to_csv(root/'partial.bed.gz', sep='\t', index=False)
     partial_covariates = covariates.loc[:, samples[10:][::-1]].copy()
@@ -61,6 +68,10 @@ with tempfile.TemporaryDirectory() as tmp:
             inputs.update(phenotype_bed=str(root/(stem+'.bed.gz' if mode == 'intersection' else stem+'.bed')),
                           covariates=str(root/(stem+'.covariates.tsv')),
                           interaction_file=str(root/(stem+'.interaction.tsv')))
+        else:
+            inputs.update(plink_psam=str(root/'ordinary.psam'),
+                          phenotype_bed=str(root/'ordinary.bed'),
+                          covariates=str(root/'ordinary.covariates.tsv'))
         env = WDL.values_from_json(inputs, task.available_inputs)
         stdlib = WDL.StdLib.Base(task.effective_wdl_version)
         for decl in task.inputs:
