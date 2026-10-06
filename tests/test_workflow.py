@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class WorkflowTests(unittest.TestCase):
     def run_task(self, interaction=None, dense=False, cloud=False, covariate='PC1\t0\t1\t2\n',
                  covariates_data=None, phenotype_data=None, compressed=False, localize=False,
-                 psam_data=None):
+                 psam_data=None, kill_engine=False):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             paths = {}
@@ -62,14 +62,32 @@ class WorkflowTests(unittest.TestCase):
                 if decl.name not in [binding.name for binding in env]:
                     value = decl.expr.eval(env, stdlib) if decl.expr else WDL.Value.Null()
                     env = env.bind(decl.name, value)
-            command = task.command.eval(env, stdlib).value
+            prep = next(t for t in WDL.load(str(ROOT/'tensorQTL_trans.wdl')).tasks if t.name == 'prepare_samples')
+            prep_inputs = {key: inputs[key] for key in inputs if key in {b.name for b in prep.available_inputs}}
+            prep_env = WDL.values_from_json(prep_inputs, prep.available_inputs)
+            if localize:
+                prep_env = WDL.Value.rewrite_env_paths(prep_env, lambda value: local_paths[value.value])
+            for decl in prep.inputs:
+                if decl.name not in [binding.name for binding in prep_env]:
+                    prep_env = prep_env.bind(decl.name, decl.expr.eval(prep_env, stdlib) if decl.expr else WDL.Value.Null())
+            prep_command = prep.command.eval(prep_env, stdlib).value
+            if interaction is not None and not cloud:
+                env = env.bind('phenotype_bed', WDL.Value.File(str(root/'phenotype.aligned.bed.gz')))
+                env = env.bind('covariates', WDL.Value.File(str(root/'covariates.aligned.tsv')))
+                env = env.bind('interaction_file', WDL.Value.File(str(root/'prepared.interaction.tsv')))
+            command = prep_command + '\n' + task.command.eval(env, stdlib).value
             # Replace only the external tensorQTL engine, retaining shell/localization/validation.
             package = root / 'tensorqtl'
             package.mkdir()
             (package / '__init__.py').write_text('')
+            (package / 'trans.py').write_text('def map_trans(*args, **kwargs): pass\n')
             (package / '__main__.py').write_text(
                 'import sys,json,pathlib,csv,gzip\n'
                 'pathlib.Path("argv.json").write_text(json.dumps(sys.argv[1:]))\n'
+                f'if {kill_engine!r}:\n'
+                ' print("Engine stage before kill")\n'
+                ' import os,signal\n'
+                ' os.kill(os.getpid(),signal.SIGKILL)\n'
                 'assert pathlib.Path(sys.argv[1]+".pvar").read_text()=="placeholder\\n"\n'
                 'assert pathlib.Path(sys.argv[1]+".psam").read_text()=='+repr(psam_data or 'placeholder\n')+'\n'
                 'data={}\n'
@@ -103,6 +121,21 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result.mapping_inputs['phenotype'][0][4:], ['S1', 'S2', 'S3'])
         self.assertEqual(result.mapping_inputs['covariates'],
                          [['ID', 'S1', 'S2', 'S3'], ['PC1', '0', '1', '2']])
+
+    def test_workflow_splits_then_scatters_and_merges(self):
+        doc = WDL.load(str(ROOT/'tensorQTL_trans.wdl'))
+        names = {task.name for task in doc.tasks}
+        self.assertTrue({'prepare_samples', 'split_chromosomes', 'merge_trans'} <= names)
+        scatters = [node for node in doc.workflow.body if isinstance(node, WDL.Tree.Scatter)]
+        self.assertEqual(len(scatters), 1)
+        self.assertEqual(scatters[0].body[0].callee.name, 'tensorqtl_trans')
+
+    def test_engine_progress_is_available_after_process_kill(self):
+        for interaction in [None, 'S1\t0.1\nS2\t0.3\nS3\t0.2\n']:
+            with self.subTest(interaction=interaction):
+                result, args = self.run_task(interaction, kill_engine=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Engine stage before kill', result.stderr)
 
     def test_typed_cloud_files_are_localized_before_intersection(self):
         result, args = self.run_task('S2\t0.3\nS1\t0.1\n',
@@ -234,6 +267,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('--return_dense', args)
         self.assertNotIn('--interaction', args)
+        self.assertNotIn('--chunk_size', args)
 
     def test_no_workflow_scope_file_writes(self):
         doc = WDL.load(str(ROOT/'tensorQTL_trans.wdl'))

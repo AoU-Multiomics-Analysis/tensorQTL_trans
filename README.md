@@ -10,9 +10,26 @@ Trans-QTL mapping tests associations between genetic variants and phenotypes (e.
 
 ### `tensorqtl_trans_workflow` (`tensorQTL_trans.wdl`)
 
-The workflow consists of a single task, `tensorqtl_trans`, which runs trans-QTL mapping using tensorQTL.
+The workflow cleans the samples once, splits the PLINK files by chromosome,
+runs a separate GPU task for each chromosome, and merges the result files.
+It discovers every chromosome present in the PVAR file, including sex
+chromosomes. It does not assume that all 22 autosomes are present.
 
-**Task: `tensorqtl_trans`**
+Each chromosome task uses **all retained phenotypes**. Only the genotype
+variants are split. The analysis therefore retains associations across
+chromosomes and the existing sparse cis-pair exclusion.
+
+PLINK2 creates the split PGEN files without a MAF filter or dosage erasure.
+The split task checks sample identities and order, plus variant IDs,
+positions, alleles, and order. It then retains the original PVAR chromosome
+labels and PSAM text. This preserves numeric sample IDs with leading zeros.
+
+The merge task reads Parquet batches and writes one final file for sparse
+output, or four final files for dense output. It keeps dense variant indexes
+and accepts empty sparse files. It stops if a chromosome output is missing
+or its schema differs.
+
+**Tasks: `prepare_samples`, `split_chromosomes`, `tensorqtl_trans`, `merge_trans`**
 
 Runs `python3 -m tensorqtl` in `--mode trans`, which tests all variant–phenotype pairs genome-wide and outputs nominal association statistics.
 
@@ -32,8 +49,11 @@ Runs `python3 -m tensorqtl` in `--mode trans`, which tests all variant–phenoty
 | `maf_threshold` | Float | Minor allele frequency threshold for filtering variants |
 | `fdr` | Float? | Legacy input; not applied in trans mode |
 | `return_dense` | Boolean | If `true`, returns dense association matrices (not supported with interactions); if `false`, returns pairs below `pval_threshold` |
-| `memory` | Int | Task memory in GB (default `120`) |
-| `disk_space` | Int | Disk space to allocate (GB) |
+| `memory` | Int | Memory in GB for each chromosome mapping task (default `120`) |
+| `split_memory` | Int | Memory in GB for the PLINK2 split task (default `8`, minimum `2`) |
+| `split_threads` | Int | CPU threads for the split task (default `4`) |
+| `auxiliary_memory` | Int | Memory in GB for each preparation and merge task (default `16`) |
+| `disk_space` | Int | Disk space in GB for each task; the split task needs room for the full input and all chromosome files |
 | `num_threads` | Int | Number of CPU threads (default `32`) |
 | `num_gpus` | Int | Number of NVIDIA L4 GPUs (default `1`; use `1` on this machine) |
 | `num_preempt` | Int | Number of preemptible retries |
@@ -42,19 +62,28 @@ Runs `python3 -m tensorqtl` in `--mode trans`, which tests all variant–phenoty
 
 | Output | Type | Description |
 |--------|------|-------------|
-| `trans_qtl` | File | Sparse nominal trans-QTL pairs in Parquet format (`<prefix>.trans_qtl_pairs.parquet`) |
+| `trans_qtl` | File? | Merged sparse nominal pairs (`<prefix>.trans_qtl_pairs.parquet`) |
+| `trans_qtls_pval`, `trans_qtl_beta`, `trans_qtl_beta_se`, `trans_qtl_af` | File? | Merged ordinary dense outputs; populated only when `return_dense=true` |
+| `chromosomes` | Array[String] | Original chromosome labels, in split order |
 
 #### Runtime
 
-- **Docker image**: `gcr.io/broad-cga-francois-gtex/tensorqtl:latest`
-- **Machine**: `g2-standard-32`, with 32 vCPUs and 128 GB system RAM
+- **Mapping, preparation, and merge image**: `gcr.io/broad-cga-francois-gtex/tensorqtl:latest`
+- **Split image**: `quay.io/biocontainers/plink2:2.00a5.12--h4ac6f70_0`
+- **Mapping machine**: `g2-standard-32`, with 32 vCPUs and 128 GB system RAM
 - **GPU**: one NVIDIA L4 (`nvidia-l4`)
 - **Task memory**: 120 GB by default, with RAM left for the operating system
 - **GCP zone**: `us-central1-c`
 
 When you update an existing Terra configuration, set `memory=120`,
 `num_threads=32`, and `num_gpus=1`, or remove those values to use the new
-defaults. Explicit input values override the defaults. The larger machine
+defaults. Explicit input values override the defaults. Each chromosome mapping
+task uses one GPU. Terra controls how many scatter tasks run at the same
+time; GPU quota can limit the number. Each task still loads the full
+phenotype matrix and its retained results, so a large chromosome or
+phenotype matrix can still exceed memory. Engine messages are sent to
+stderr without Python output buffering. The task also reports requested
+resources and readable host/container memory limits. The larger machine
 increases system RAM. GPU memory remains 24 GB.
 
 ## Data Preparation
@@ -124,6 +153,14 @@ Before running the workflow, ensure that sample IDs are consistent across all th
 
 ## Running on Terra
 
+**Input names changed:** all inputs are now workflow inputs. Replace
+`tensorqtl_trans_workflow.tensorqtl_trans.<name>` with
+`tensorqtl_trans_workflow.<name>` in an existing inputs JSON or Terra
+configuration. For example, use `tensorqtl_trans_workflow.plink_pgen` and
+`tensorqtl_trans_workflow.interaction_file`. Refresh the method inputs after
+importing the new workflow. The final output names remain the same.
+
+
 1. Import `tensorQTL_trans.wdl` into Terra through a workflow repository or Dockstore.
 2. Upload your input files to a Google Cloud Storage bucket.
 3. Fill in the workflow inputs JSON with the GCS paths to your files and desired parameter values.
@@ -138,7 +175,7 @@ Before running the workflow, ensure that sample IDs are consistent across all th
 
 ## Optional interaction mapping
 
-Set `tensorqtl_trans_workflow.tensorqtl_trans.interaction_file` to the GCS URI
+Set `tensorqtl_trans_workflow.interaction_file` to the GCS URI
 of a two-column, headerless TSV. Leave it unset for ordinary trans mapping.
 WDL preserves this input as `File?`, so Terra localizes it before validation.
 The task checks that all required paths are readable. It also places the
@@ -157,7 +194,7 @@ The file must contain one finite numeric value per listed sample. Sample IDs
 must be nonempty and unique. Use a consistent fraction scale (for example,
 0–1 for CD4 fractions).
 
-When an interaction file is present, the task keeps only samples present in
+When an interaction file is present, the preparation task keeps only samples present in
 all three files: the interaction TSV, the covariates TSV, and the phenotype
 BED. It creates local copies with the same sample order as the original BED.
 It removes samples outside this intersection from each copy. The four BED
@@ -172,13 +209,17 @@ effect in the retained covariates. Retained samples must also be present in
 the genotype files. Without an interaction file, the task uses the original
 BED and covariates files.
 
-For interaction runs, the task uses a small Python launcher for the tensorQTL
+For interaction runs, each chromosome task uses a small Python launcher for the tensorQTL
 CLI. The launcher reads sample IDs in the aligned interaction TSV and the
 genotype PSAM file as text.
 This prevents numeric IDs from becoming numbers and preserves leading zeros.
 It also preserves IDs such as `NA` as text. The reader change applies only to
 those two files in that process. It does not change the installed
 tensorQTL package or the sample IDs in any file.
+
+tensorQTL 1.0.10 can fail when no interaction pairs pass the threshold.
+The launcher handles only that empty-hit failure and returns a typed empty
+result. Other errors still stop the task.
 
 The model includes genotype, the interaction variable's main effect, and
 genotype × interaction variable, plus the covariates. For a CD4 scan:
@@ -216,8 +257,11 @@ interaction inputs, three-file sample intersection, plain and compressed
 BED input, sample order, invalid values, safe path quoting,
 unresolved cloud URIs, and separate PLINK localization directories.
 The CPU smoke test compares an interaction run with partial sample overlap
-against a manually filtered reference. It also checks ordinary sparse and
-dense runs. The smoke inputs use numeric sample IDs with leading zeros.
+against a manually filtered reference. It compares merged chromosome results with whole-genome interaction,
+ordinary sparse, and dense runs. It checks PGEN genotype values, chromosome
+labels, the dense variant index, cis exclusion, and interaction runs with
+no hits. GitHub Actions installs pinned PLINK2 from Bioconda with
+micromamba. No Docker image is built. The smoke inputs use numeric sample IDs with leading zeros.
 
 The complete workflow has **not been tested on Terra**. The command tests
 simulate cloud-to-local paths; they do not exercise Terra's localization
