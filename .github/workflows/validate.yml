@@ -18,6 +18,16 @@ jobs:
           python-version: '3.11'
       - run: pip install miniwdl==1.14.2 numpy==1.26.4 pandas==2.2.3 pyarrow==19.0.1
       - run: miniwdl check tensorQTL_trans.wdl
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Validate with the Cromwell WDL parser
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/broadinstitute/cromwell/releases/download/92/womtool-92.jar \
+            --output "$RUNNER_TEMP/womtool-92.jar"
+          java -jar "$RUNNER_TEMP/womtool-92.jar" validate tensorQTL_trans.wdl
       - run: python -m unittest discover -s tests
       - name: Install CPU smoke dependencies
         run: |
