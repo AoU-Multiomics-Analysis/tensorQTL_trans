@@ -10,10 +10,12 @@
 
 ## Tasks
 
-- [ ] Add command tests for preparation, chromosome split, scatter dependencies, merge, and logs. Verify the new tests fail before implementation.
-- [ ] Move sample cleaning into one task. Split all chromosomes present in PVAR with pinned PLINK2, preserving samples and variant metadata. Keep every file typed in the scatter.
-- [ ] Stream sparse and dense results into the existing final output names. Preserve empty sparse results and fail on inconsistent schemas.
-- [ ] Extend the GitHub Actions CPU smoke test to compare merged chromosome results with whole-genome results, including empty results and dense output. Run WDL and command checks locally.
-- [ ] Obtain an independent code review, address material findings, and open a pull request. Wait for GitHub Actions results.
+- [x] Add command tests for preparation, chromosome split, scatter dependencies, merge, and logs. Verify the new tests fail before implementation.
+- [x] Move sample cleaning into one task. Split all chromosomes present in PVAR with pinned PLINK2, preserving samples and variant metadata. Keep every file typed in the scatter.
+- [x] Stream sparse and dense results into the existing final output names. Preserve empty sparse results and fail on inconsistent schemas.
+- [x] Extend the GitHub Actions CPU smoke test to compare merged chromosome results with whole-genome results, including empty results and dense output. Run WDL and command checks locally.
+- [x] Obtain an independent code review, address material findings, and open a pull request. Wait for GitHub Actions results.
 
 **Validation limit:** The full workflow must be tested on Terra separately. This change reduces genotype memory per GPU task; each task still loads all phenotypes.
+
+**Evidence:** 27 local tests and miniwdl check pass. An independent reviewer found no remaining material issue. The first GitHub smoke passed split integrity and whole-genome comparisons; a fixed-decimal threshold fixture was corrected before the final run. PR #8 is open.

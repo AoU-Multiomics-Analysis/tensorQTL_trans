@@ -111,11 +111,18 @@ with tempfile.TemporaryDirectory() as tmp:
             reader.read(0,observed)
             np.testing.assert_array_equal(observed,genotypes[i])
         assert path.with_suffix('.psam').read_text() == (root/'input.psam').read_text()
+    # Use a representable WDL threshold and independent noise to produce no hits.
+    # miniwdl renders Float placeholders in fixed decimal notation.
+    noise = phenotype.loc[:, ['#chr','start','end','phenotype_id',*retained]].copy()
+    noise.loc[:, retained] = rng.normal(size=(2,len(retained)))
+    noise.to_csv(root/'noise.bed',sep='\t',index=False)
     for mode in ['interaction','intersection','ordinary','dense','mixed_hits','no_hits']:
         inputs = mode_inputs['intersection' if mode in ['mixed_hits','no_hits'] else mode].copy()
         dense = mode=='dense'
         if mode in ['mixed_hits','no_hits']:
-            inputs['pval_threshold'] = 1e-30 if mode=='mixed_hits' else 1e-100
+            inputs['pval_threshold'] = 0.000001
+            if mode=='no_hits':
+                inputs['phenotype_bed'] = str(root/'noise.bed')
         groups = {key:[] for key in ['pairs','pvals','betas','beta_ses','afs']}
         for i,path in enumerate(chromosome_files):
             work = root/f'scatter_{mode}_{i}'
@@ -143,8 +150,12 @@ with tempfile.TemporaryDirectory() as tmp:
             if mode=='no_hits':
                 assert observed.empty
             elif mode=='mixed_hits':
-                assert set(observed.variant_id) == {'v0'}
-                assert observed.pval_gi.max() < 1e-30
+                counts = [len(pd.read_parquet(path)) for path in groups['pairs']]
+                assert any(count == 0 for count in counts) and any(count > 0 for count in counts), counts
+                expected = mode_results['intersection'].query('pval_gi < 0.000001')
+                def order(frame):
+                    return frame.sort_values(['variant_id','phenotype_id']).reset_index(drop=True)
+                pd.testing.assert_frame_equal(order(observed),order(expected),rtol=1e-3,atol=1e-6)
             else:
                 def order(frame):
                     return frame.sort_values(['variant_id','phenotype_id']).reset_index(drop=True)
