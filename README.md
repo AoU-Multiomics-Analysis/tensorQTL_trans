@@ -32,10 +32,10 @@ Runs `python3 -m tensorqtl` in `--mode trans`, which tests all variant–phenoty
 | `maf_threshold` | Float | Minor allele frequency threshold for filtering variants |
 | `fdr` | Float? | Legacy input; not applied in trans mode |
 | `return_dense` | Boolean | If `true`, returns dense association matrices (not supported with interactions); if `false`, returns pairs below `pval_threshold` |
-| `memory` | Int | Memory to allocate (GB) |
+| `memory` | Int | Task memory in GB (default `120`) |
 | `disk_space` | Int | Disk space to allocate (GB) |
-| `num_threads` | Int | Number of CPU threads |
-| `num_gpus` | Int | Number of GPUs (NVIDIA L4) |
+| `num_threads` | Int | Number of CPU threads (default `32`) |
+| `num_gpus` | Int | Number of NVIDIA L4 GPUs (default `1`; use `1` on this machine) |
 | `num_preempt` | Int | Number of preemptible retries |
 
 #### Outputs
@@ -47,8 +47,15 @@ Runs `python3 -m tensorqtl` in `--mode trans`, which tests all variant–phenoty
 #### Runtime
 
 - **Docker image**: `gcr.io/broad-cga-francois-gtex/tensorqtl:latest`
-- **GPU**: NVIDIA L4 (`nvidia-l4`), `g2-standard-16`
+- **Machine**: `g2-standard-32`, with 32 vCPUs and 128 GB system RAM
+- **GPU**: one NVIDIA L4 (`nvidia-l4`)
+- **Task memory**: 120 GB by default, with RAM left for the operating system
 - **GCP zone**: `us-central1-c`
+
+When you update an existing Terra configuration, set `memory=120`,
+`num_threads=32`, and `num_gpus=1`, or remove those values to use the new
+defaults. Explicit input values override the defaults. The larger machine
+increases system RAM. GPU memory remains 24 GB.
 
 ## Data Preparation
 
